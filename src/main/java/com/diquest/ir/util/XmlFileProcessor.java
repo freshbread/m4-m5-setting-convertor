@@ -133,10 +133,12 @@ public class XmlFileProcessor {
                         System.out.println("Copied: " + destinationFilePath);
                     }
                 }
-            } else if (filePath.contains(DBWATCHER_FOLDER) && !DBWATCHER_LIST.equals(fileName)) {   // setting/COLLECTION_NAME/dbwatcher/list_내_정의된_DBWATCHER_파일.xml
-                // TODO dbwatcher 설정 파일 처리
-            } else if (filePath.contains(DBWATCHER_FOLDER) && !DBWATCHER_LIST.equals(fileName)) {   // setting/COLLECTION_NAME/dbwatcher/list_내_정의된_DBWATCHER_파일.xml
-                // TODO dbwatcher 설정 파일 처리
+            } else if (filePath.contains(DBWATCHER_FOLDER)) {
+                if (DBWATCHER_LIST.equals(fileName)) {  // setting/COLLECTION_NAME/dbwatcher/list_내_정의된_DBWATCHER_파일.xml
+                    // TODO dbwatcher list 파일 처리
+                } else {    // setting/COLLECTION_NAME/dbwatcher/list_내_정의된_DBWATCHER_파일.xml
+                    // TODO dbwatcher 설정 파일 처리
+                }
             }
         } else {
             // 옮길 대상이 아니거나, 아직 이관 개발이 안 된 대상 파일들은 아무것도 하지 않는다.
