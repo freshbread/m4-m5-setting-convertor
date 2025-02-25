@@ -3,6 +3,7 @@ package com.diquest.ir.util;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.stream.Collectors;
 import javax.xml.parsers.DocumentBuilder;
@@ -16,25 +17,20 @@ import javax.xml.transform.stream.StreamResult;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 /**
  * Mariner4 세팅 xml 파일을 읽어와 m5 세팅 파일로 저장 처리하는 클래스
  *
- * @author jhjeon
  * @version 1.0
  * @since 2025-02-25
  */
 public class XmlFileProcessor {
 
-    private String ir4HomePath;
-    private String ir5HomePath;
-
-    public XmlFileProcessor() {
-        ir4HomePath = System.getProperty("IR4_HOME");
-        ir5HomePath = System.getProperty("IR5_HOME");
-    }
+    private final String ir4HomePath;
+    private final String ir5HomePath;
 
     public XmlFileProcessor(String ir4HomePath, String ir5HomePath) {
         this.ir4HomePath = ir4HomePath;
@@ -59,21 +55,6 @@ public class XmlFileProcessor {
     }
 
     /**
-     * XML 파일 목록을 가져온다.
-     *
-     * @param inputFilePath 기존 XML 파일이 있는 폴더 경로
-     * @return 변경 대상 XML 파일 목록
-     * */
-    private List<File> getXmlFiles(String inputFilePath) throws IOException {
-        return Files.walk(Paths.get(inputFilePath))
-                .filter(Files::isRegularFile)
-                .filter(path -> path.toString().endsWith(".xml"))
-                .filter(path -> !path.getFileName().toString().startsWith("old_"))
-                .map(java.nio.file.Path::toFile)
-                .collect(Collectors.toList());
-    }
-
-    /**
      * 변경할 XML 파일을 체크 및 변경작업 후 저장한다.
      *
      * @param xmlFile   변경 대상 설정 XML 파일
@@ -90,7 +71,6 @@ public class XmlFileProcessor {
         if (
             COLLECTION_LIST.equals(fileName)    // setting/collectionList.xml
             || PROFILE_SETTING.equals(fileName)    // setting/COLLECTION_NAME/profileSetting.xml
-            || filePath.contains(DBWATCHER_FOLDER) && DBWATCHER_LIST.equals(fileName)   // setting/COLLECTION_NAME/dbwatcher/list.xml
         ) { // 딱히 m4, m5 간의 차이가 보이지 않으므로 그대로 복사한다.
             String destinationFilePath = filePath.replace(inputFilePath, outputFilePath);
             copyFile(filePath, destinationFilePath);
@@ -133,16 +113,181 @@ public class XmlFileProcessor {
                         System.out.println("Copied: " + destinationFilePath);
                     }
                 }
-            } else if (filePath.contains(DBWATCHER_FOLDER)) {
+            } else if (filePath.contains(DBWATCHER_FOLDER)) {  // setting/COLLECTION_NAME/dbwatcher 폴더 내 xml 파일들
                 if (DBWATCHER_LIST.equals(fileName)) {  // setting/COLLECTION_NAME/dbwatcher/list_내_정의된_DBWATCHER_파일.xml
-                    // TODO dbwatcher list 파일 처리
+                    // `element` 태그의 `id` 속성을 대문자로 변환
+                    NodeList elements = document.getElementsByTagName("element");
+                    for (int idx = 0; idx < elements.getLength(); idx++) {
+                        Element element = (Element) elements.item(idx);
+                        String id = element.getAttribute("id");
+                        if (id != null && !id.isEmpty() && id.equals(id.toLowerCase())) {
+                            element.setAttribute("id", id.toUpperCase());
+                        }
+                    }
+                    // 변경된 XML 파일 저장
+                    String saveFilePath = filePath.replace(inputFilePath, outputFilePath);
+                    saveXmlFile(xmlDeclaration, document, saveFilePath);
+                    System.out.println("Processed and saved with updated id attributes: " + saveFilePath);
                 } else {    // setting/COLLECTION_NAME/dbwatcher/list_내_정의된_DBWATCHER_파일.xml
-                    // TODO dbwatcher 설정 파일 처리
+                    // dbwatcher 설정 파일 처리
+                    NodeList idNode = document.getElementsByTagName("id");
+                    if (idNode.getLength() > 0) {
+                        Element element = (Element) idNode.item(0);
+                        String id = element.getTextContent().toUpperCase();
+                        Element newIdElement = (Element) element.cloneNode(false);
+                        newIdElement.setTextContent(id);
+                        replaceElementWithNewTag(element, newIdElement);
+                    }
+
+                    NodeList fullCollectSqlPre = document.getElementsByTagName("fullCollectSqlPre");
+                    NodeList fullCollectSql = document.getElementsByTagName("fullCollectSql");
+                    NodeList fullCollectSqlPost = document.getElementsByTagName("fullCollectSqlPost");
+                    NodeList autoUpdateCheckPre = document.getElementsByTagName("autoUpdateCheckPre");
+                    NodeList autoUpdateCheckPost = document.getElementsByTagName("autoUpdateCheckPost");
+                    NodeList updateIdSelectSql = document.getElementsByTagName("updateIdSelectSql");
+                    NodeList incCollectSql = document.getElementsByTagName("incCollectSql");
+
+                    // XML 내용 생성
+                    Element sqlFull = document.createElement("sqlFull");
+                    Element fullQuery = document.createElement("fullQuery");
+                    fullQuery.setAttribute("id", "FULL_SQL");
+                    sqlFull.appendChild(fullQuery);
+                    if (fullCollectSqlPre.getLength() > 0) {
+                        Element element = (Element) fullCollectSqlPre.item(0);
+                        String queryText = element.getTextContent();
+                        if (!queryText.isEmpty()) {
+                            Node preNode = createElementWithText(document, "pre", queryText);
+                            fullQuery.appendChild(preNode);
+                        }
+                        replaceElementWithNewTag(element, sqlFull);
+                    } else {
+                        document.getDocumentElement().appendChild(sqlFull);
+                    }
+
+                    if (fullCollectSql.getLength() > 0) {
+                        Element element = (Element) fullCollectSql.item(0);
+                        String queryText = element.getTextContent();
+                        if (!queryText.isEmpty()) {
+                            Node mainNode = createElementWithText(document, "main", queryText);
+                            fullQuery.appendChild(mainNode);
+                            element.getParentNode().removeChild(element);
+                        }
+                    }
+
+                    if (fullCollectSqlPost.getLength() > 0) {
+                        Element element = (Element) fullCollectSqlPost.item(0);
+                        String queryText = element.getTextContent();
+                        if (!queryText.isEmpty()) {
+                            Node postNode = createElementWithText(document, "post", queryText);
+                            fullQuery.appendChild(postNode);
+                            element.getParentNode().removeChild(element);
+                        }
+                    }
+
+                    Element sqlIncremental = document.createElement("sqlIncremental");
+                    Element incrementalQuery = document.createElement("incrementalQuery");
+                    incrementalQuery.setAttribute("id", "INC_SQL");
+                    sqlIncremental.appendChild(incrementalQuery);
+                    if (autoUpdateCheckPre.getLength() > 0) {
+                        Element element = (Element) autoUpdateCheckPre.item(0);
+                        String queryText = element.getTextContent();
+                        if (!queryText.isEmpty()) {
+                            Node preNode = createElementWithText(document, "pre", queryText);
+                            incrementalQuery.appendChild(preNode);
+                        }
+                        replaceElementWithNewTag(element, sqlIncremental);
+                    } else {
+                        document.getDocumentElement().appendChild(sqlIncremental);
+                    }
+
+                    if (updateIdSelectSql.getLength() > 0) {
+                        Element element = (Element) updateIdSelectSql.item(0);
+                        String queryText = element.getTextContent();
+                        if (!queryText.isEmpty()) {
+                            Node updateIdNode = createElementWithText(document, "updateId", queryText);
+                            incrementalQuery.appendChild(updateIdNode);
+                        }
+                        element.getParentNode().removeChild(element);
+                    }
+
+                    if (incCollectSql.getLength() > 0) {
+                        Element element = (Element) incCollectSql.item(0);
+                        String queryText = element.getTextContent();
+                        if (!queryText.isEmpty()) {
+                            Node updateIdNode = createElementWithText(document, "main", queryText);
+                            incrementalQuery.appendChild(updateIdNode);
+                        }
+                        element.getParentNode().removeChild(element);
+                    }
+
+                    if (autoUpdateCheckPost.getLength() > 0) {
+                        Element element = (Element) autoUpdateCheckPost.item(0);
+                        String queryText = element.getTextContent();
+                        if (!queryText.isEmpty()) {
+                            Node updateIdNode = createElementWithText(document, "post", queryText);
+                            incrementalQuery.appendChild(updateIdNode);
+                        }
+                        element.getParentNode().removeChild(element);
+                    }
+
+                    // 사용하지 않는 태그 제거
+                    NodeList manualUpdateCheckPost = document.getElementsByTagName("manualUpdateCheckPost");
+                    if (manualUpdateCheckPost.getLength() > 0) {
+                        for (int idx = 0; idx < manualUpdateCheckPost.getLength(); idx++) {
+                            Element element = (Element) manualUpdateCheckPost.item(idx);
+                            element.getParentNode().removeChild(element);
+                        }
+                    }
+                    NodeList fieldUpdateCollectSqlPre = document.getElementsByTagName("fieldUpdateCollectSqlPre");
+                    if (fieldUpdateCollectSqlPre.getLength() > 0) {
+                        for (int idx = 0; idx < fieldUpdateCollectSqlPre.getLength(); idx++) {
+                            Element element = (Element) fieldUpdateCollectSqlPre.item(idx);
+                            element.getParentNode().removeChild(element);
+                        }
+                    }NodeList fieldUpdateCollectSqlPost = document.getElementsByTagName("fieldUpdateCollectSqlPost");
+                    if (fieldUpdateCollectSqlPost.getLength() > 0) {
+                        for (int idx = 0; idx < fieldUpdateCollectSqlPost.getLength(); idx++) {
+                            Element element = (Element) fieldUpdateCollectSqlPost.item(idx);
+                            element.getParentNode().removeChild(element);
+                        }
+                    }
+
+                    // 새로운 태그 추가
+                    Element sqlFieldUpdate = document.createElement("sqlFieldUpdate");
+                    document.getDocumentElement().appendChild(sqlFieldUpdate);
+                    Element sqlDocAdd = document.createElement("sqlDocAdd");
+                    document.getDocumentElement().appendChild(sqlDocAdd);
+
+                    // 변경된 XML 파일 저장 (파일명은 대문자로 수정)
+                    String saveFilePath = filePath.replace(inputFilePath, outputFilePath);
+                    int dotIndex = fileName.lastIndexOf('.');
+                    String nameWithoutExtension = (dotIndex == -1) ? fileName : fileName.substring(0, dotIndex);
+                    String fileExtension = (dotIndex == -1) ? "" : fileName.substring(dotIndex);
+                    String upperCaseName = nameWithoutExtension.toUpperCase();  // 파일명을 대문자로 변환
+                    String repUpperFileName = upperCaseName + fileExtension;
+                    saveFilePath = saveFilePath.replace(fileName, repUpperFileName);
+                    saveXmlFile(xmlDeclaration, document, saveFilePath);
+                    System.out.println("Processed and saved with updated SQL elements: " + saveFilePath);
                 }
             }
         } else {
             // 옮길 대상이 아니거나, 아직 이관 개발이 안 된 대상 파일들은 아무것도 하지 않는다.
         }
+    }
+
+    /**
+     * XML 파일 목록을 가져온다.
+     *
+     * @param inputFilePath 기존 XML 파일이 있는 폴더 경로
+     * @return 변경 대상 XML 파일 목록
+     * */
+    private List<File> getXmlFiles(String inputFilePath) throws IOException {
+        return Files.walk(Paths.get(inputFilePath))
+                .filter(Files::isRegularFile)
+                .filter(path -> path.toString().endsWith(".xml"))
+                .filter(path -> !path.getFileName().toString().startsWith("old_"))
+                .map(java.nio.file.Path::toFile)
+                .collect(Collectors.toList());
     }
 
     /**
@@ -154,7 +299,7 @@ public class XmlFileProcessor {
     private void copyFile(String sourceFilePath, String destinationFilePath) {
         try {
             Files.createDirectories(Paths.get(destinationFilePath).getParent());
-            Files.copy(Paths.get(sourceFilePath), Paths.get(destinationFilePath));
+            Files.copy(Paths.get(sourceFilePath), Paths.get(destinationFilePath), StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -222,6 +367,31 @@ public class XmlFileProcessor {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    /**
+     * 주어진 이름과 텍스트 내용을 가진 새로운 XML 요소를 생성
+     *
+     * @param doc XML Document 객체
+     * @param tagName 태그 이름
+     * @param textContent 태그 내용
+     * @return 생성된 XML Element 객체
+     */
+    private Element createElementWithText(Document doc, String tagName, String textContent) {
+        Element element = doc.createElement(tagName);
+        element.appendChild(doc.createTextNode(textContent));
+        return element;
+    }
+
+    /**
+     * 기존 XML 요소를 새로운 태그 이름을 가진 요소로 대체
+     *
+     * @param oldElement 기존 XML Element 객체
+     * @param newElement 새로운 태그 이름을 가진 XML Element 객체
+     */
+    private void replaceElementWithNewTag(Element oldElement, Element newElement) {
+        Node parentNode = oldElement.getParentNode();
+        parentNode.replaceChild(newElement, oldElement);
     }
 
     private static final String COLLECTION_LIST = "collectionList.xml";
