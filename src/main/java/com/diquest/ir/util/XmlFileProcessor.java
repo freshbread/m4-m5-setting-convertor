@@ -15,6 +15,7 @@ import javax.xml.transform.Transformer;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 
+import com.diquest.ir5.common.msg.collection.CollectionType;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -100,18 +101,19 @@ public class XmlFileProcessor {
                             String saveFilePath = filePath.replace(inputFilePath, outputFilePath);
                             saveXmlFile(xmlDeclaration, document, saveFilePath);
                             System.out.println("Processed and saved: " + saveFilePath);
-                        } else {
-                            // baseDirectory에 ir4HomePath 경로가 포함되지 않은 경우 baseDirectory 내용을 바꿀 수 없으므로 파일 복사
-                            String destinationFilePath = filePath.replace(inputFilePath, outputFilePath);
-                            copyFile(filePath, destinationFilePath);
-                            System.out.println("Copied: " + destinationFilePath);
                         }
-                    } else {
-                        // ir4HomePath가 null이거나 비어있는 경우 baseDirectory 내용을 바꿀 수 없으므로 파일 복사
-                        String destinationFilePath = filePath.replace(inputFilePath, outputFilePath);
-                        copyFile(filePath, destinationFilePath);
-                        System.out.println("Copied: " + destinationFilePath);
                     }
+                    String union = collectionSettingElement.getAttribute("union");
+                    String join = collectionSettingElement.getAttribute("join");
+                    String type = "GENERAL";
+                    if ("true".equalsIgnoreCase(union)) {
+                        type = "UNION";
+                    } else if ("true".equalsIgnoreCase(join)) {
+                        type = "JOIN";
+                    }
+                    collectionSettingElement.removeAttribute("union");
+                    collectionSettingElement.removeAttribute("join");
+                    collectionSettingElement.setAttribute("type", type);
                 }
             } else if (filePath.contains(DBWATCHER_FOLDER)) {  // setting/COLLECTION_NAME/dbwatcher 폴더 내 xml 파일들
                 if (DBWATCHER_LIST.equals(fileName)) {  // setting/COLLECTION_NAME/dbwatcher/list_내_정의된_DBWATCHER_파일.xml
@@ -148,10 +150,12 @@ public class XmlFileProcessor {
                     NodeList incCollectSql = document.getElementsByTagName("incCollectSql");
 
                     // XML 내용 생성
+                    // 전체색인 (sqlFull)
+                    boolean hasFullQueryNode = false;
                     Element sqlFull = document.createElement("sqlFull");
+                    document.getDocumentElement().appendChild(sqlFull);
                     Element fullQuery = document.createElement("fullQuery");
                     fullQuery.setAttribute("id", "FULL_SQL");
-                    sqlFull.appendChild(fullQuery);
                     if (fullCollectSqlPre.getLength() > 0) {
                         Element element = (Element) fullCollectSqlPre.item(0);
                         String queryText = element.getTextContent();
@@ -159,35 +163,45 @@ public class XmlFileProcessor {
                             Node preNode = createElementWithText(document, "pre", queryText);
                             fullQuery.appendChild(preNode);
                         }
-                        replaceElementWithNewTag(element, sqlFull);
-                    } else {
-                        document.getDocumentElement().appendChild(sqlFull);
+                        element.getParentNode().removeChild(element);
+                        if (!hasFullQueryNode) {
+                            hasFullQueryNode = true;
+                        }
                     }
-
                     if (fullCollectSql.getLength() > 0) {
                         Element element = (Element) fullCollectSql.item(0);
                         String queryText = element.getTextContent();
                         if (!queryText.isEmpty()) {
                             Node mainNode = createElementWithText(document, "main", queryText);
                             fullQuery.appendChild(mainNode);
-                            element.getParentNode().removeChild(element);
+                        }
+                        element.getParentNode().removeChild(element);
+                        if (!hasFullQueryNode) {
+                            hasFullQueryNode = true;
                         }
                     }
-
                     if (fullCollectSqlPost.getLength() > 0) {
                         Element element = (Element) fullCollectSqlPost.item(0);
                         String queryText = element.getTextContent();
                         if (!queryText.isEmpty()) {
                             Node postNode = createElementWithText(document, "post", queryText);
                             fullQuery.appendChild(postNode);
-                            element.getParentNode().removeChild(element);
+                        }
+                        element.getParentNode().removeChild(element);
+                        if (!hasFullQueryNode) {
+                            hasFullQueryNode = true;
                         }
                     }
+                    if (hasFullQueryNode) {
+                        sqlFull.appendChild(fullQuery);
+                    }
 
+                    // 추가색인 (incrementalQuery)
+                    boolean hasIncrementalQueryNode = false;
                     Element sqlIncremental = document.createElement("sqlIncremental");
+                    document.getDocumentElement().appendChild(sqlIncremental);
                     Element incrementalQuery = document.createElement("incrementalQuery");
                     incrementalQuery.setAttribute("id", "INC_SQL");
-                    sqlIncremental.appendChild(incrementalQuery);
                     if (autoUpdateCheckPre.getLength() > 0) {
                         Element element = (Element) autoUpdateCheckPre.item(0);
                         String queryText = element.getTextContent();
@@ -195,11 +209,11 @@ public class XmlFileProcessor {
                             Node preNode = createElementWithText(document, "pre", queryText);
                             incrementalQuery.appendChild(preNode);
                         }
-                        replaceElementWithNewTag(element, sqlIncremental);
-                    } else {
-                        document.getDocumentElement().appendChild(sqlIncremental);
+                        element.getParentNode().removeChild(element);
+                        if (!hasIncrementalQueryNode) {
+                            hasIncrementalQueryNode = true;
+                        }
                     }
-
                     if (updateIdSelectSql.getLength() > 0) {
                         Element element = (Element) updateIdSelectSql.item(0);
                         String queryText = element.getTextContent();
@@ -208,8 +222,10 @@ public class XmlFileProcessor {
                             incrementalQuery.appendChild(updateIdNode);
                         }
                         element.getParentNode().removeChild(element);
+                        if (!hasIncrementalQueryNode) {
+                            hasIncrementalQueryNode = true;
+                        }
                     }
-
                     if (incCollectSql.getLength() > 0) {
                         Element element = (Element) incCollectSql.item(0);
                         String queryText = element.getTextContent();
@@ -218,8 +234,10 @@ public class XmlFileProcessor {
                             incrementalQuery.appendChild(updateIdNode);
                         }
                         element.getParentNode().removeChild(element);
+                        if (!hasIncrementalQueryNode) {
+                            hasIncrementalQueryNode = true;
+                        }
                     }
-
                     if (autoUpdateCheckPost.getLength() > 0) {
                         Element element = (Element) autoUpdateCheckPost.item(0);
                         String queryText = element.getTextContent();
@@ -228,6 +246,12 @@ public class XmlFileProcessor {
                             incrementalQuery.appendChild(updateIdNode);
                         }
                         element.getParentNode().removeChild(element);
+                        if (!hasIncrementalQueryNode) {
+                            hasIncrementalQueryNode = true;
+                        }
+                    }
+                    if (hasIncrementalQueryNode) {
+                        sqlIncremental.appendChild(incrementalQuery);
                     }
 
                     // 사용하지 않는 태그 제거
